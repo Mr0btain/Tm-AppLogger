@@ -1,0 +1,45 @@
+# Tests on every pull request and push to main, and on v* tags (releases). Apps build this from source,
+# cloned from the public GitHub mirror at a tag, so a release is pushing a v* tag matching tmapplogger.version
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platforms;android-37.0
+
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3: a commit, since act_runner can't resolve the v4 tag
+
+      - name: Tests
+        run: ./gradlew jvmTest
+
+      - name: Web and Android compile
+        run: ./gradlew compileKotlinWasmJs compileAndroidMain
+
+      - name: Tag matches gradle.properties
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(grep '^tmapplogger.version=' gradle.properties | cut -d= -f2)
+          test "${GITHUB_REF_NAME}" = "v${version}" || { echo "Tag ${GITHUB_REF_NAME} isn't v${version}"; exit 1; }
+
